@@ -5,7 +5,7 @@ import numpy as np
 import os
 
 from utils.command import Command
-
+from utils.videoHandle import main_loop
 # | GLOBAL VARIABLES
 FORMAT = "utf-8"
 IP = ""
@@ -26,3 +26,4 @@ YLE = (255, 255, 0)
 if __name__ == "__main__":
     cmd = Command(fmt=FORMAT, tello_ip=TELLO_IP, cmd_port=CMD_PORT, self_ip=IP)
     cmd.init()
+    main_loop(img_port=IMG_PORT, req_fps=FPS)

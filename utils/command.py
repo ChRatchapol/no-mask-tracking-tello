@@ -12,7 +12,7 @@ class Command:
         self.gcs_cmd_addr = (self.ip, 9000)
         self.cmd_sock = self.__cmd_sock_setup()
         self.format = fmt
-        self.tellop_ip = tello_ip
+        self.tello_ip = tello_ip
         self.cmd_port = cmd_port
 
     def __cmd_sock_setup(self) -> socket.socket:
@@ -27,7 +27,7 @@ class Command:
         if port is None:
             port = self.cmd_port
 
-        msg = msg.encode(encoding=self.fmt)
+        msg = msg.encode(encoding=self.format)
         sent = self.cmd_sock.sendto(msg, (ip, port))
         return sent
 

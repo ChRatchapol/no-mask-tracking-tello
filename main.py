@@ -1,11 +1,12 @@
 # main file for control the Tello with YOLOv5
 # | IMPORT
+import time
 import cv2
 import numpy as np
 import os
 
 from utils.command import Command
-from utils.videoHandle import main_loop
+from utils.videoHandle import VideoHandle
 # | GLOBAL VARIABLES
 FORMAT = "utf-8"
 IP = ""
@@ -25,5 +26,12 @@ YLE = (255, 255, 0)
 
 if __name__ == "__main__":
     cmd = Command(fmt=FORMAT, tello_ip=TELLO_IP, cmd_port=CMD_PORT, self_ip=IP)
+    vh = VideoHandle(img_port=IMG_PORT, req_fps=FPS)
     cmd.init()
-    main_loop(img_port=IMG_PORT, req_fps=FPS)
+    vh.start_thrd()
+    sent = cmd.send(msg="battery?")
+    while vh.run:
+        if vh.cur_cen is not None:
+            print(vh.cur_cen)
+        time.sleep(1)
+    cmd.term = True

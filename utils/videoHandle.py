@@ -9,7 +9,7 @@ import time
 from os import path
 from typing import Tuple
 
-from yolo.detect import detect, colors
+from yolo.detect import detect
 
 # | CLASSES
 class ML(detect):
@@ -47,7 +47,7 @@ class ML(detect):
 
 
 class VideoHandle:
-    def __init__(self, img_port: int, req_fps: int):
+    def __init__(self, img_port: int, req_fps: int, test: bool = False):
         self.cur_objs = []
         self.obj_ids = {}
         self._id = 0
@@ -56,16 +56,32 @@ class VideoHandle:
         self.frame_count = 0
         self.fps = []
 
-        pipeline = f"udpsrc port={img_port} ! video/x-h264,stream-format=byte-stream,skip-first-bytes=2,framerate={req_fps}/1 ! queue ! decodebin ! videoconvert ! appsink"
-        self.cur_path = sys.argv[0]
-        self.det = ML(
-            source=pipeline,
-            size=[640, 640],
-            conf_thres=0.6,
-            weights=path.join(path.split(self.cur_path)[0], "yolo/mask_yolov5_gray.pt"),
-            gray=True,
-            gst=True,
-        )
+        if not test:
+            pipeline = f"udpsrc port={img_port} ! video/x-h264,stream-format=byte-stream,skip-first-bytes=2,framerate={req_fps}/1 ! queue ! decodebin ! videoconvert ! appsink"
+            self.cur_path = sys.argv[0]
+            self.det = ML(
+                source=pipeline,
+                size=[640, 640],
+                conf_thres=0.6,
+                weights=path.join(
+                    path.split(self.cur_path)[0], "yolo/mask_yolov5_gray.pt"
+                ),
+                gray=True,
+                gst=True,
+            )
+        else:
+            pipeline = "ksvideosrc device-index=0 ! decodebin ! videoconvert ! appsink"
+            self.cur_path = sys.argv[0]
+            self.det = ML(
+                source=pipeline,
+                size=[640, 640],
+                conf_thres=0.6,
+                weights=path.join(
+                    path.split(self.cur_path)[0], "yolo/mask_yolov5_gray.pt"
+                ),
+                gray=True,
+                gst=True,
+            )
 
         self.frame_lst = []
         self.start = None
@@ -152,18 +168,81 @@ class VideoHandle:
 
     @staticmethod
     def area_cal(tl: Tuple[int, int], br: Tuple[int, int]) -> int:
-        w = br[0] - tl[0]
-        h = tl[1] - br[1]
+        w = abs(br[0] - tl[0])
+        h = abs(br[1] - tl[1])
         return w * h
 
+    def in_zone(self, point, zone):
+        if point is None:
+            return False
+
+        x_point, y_point = point
+        tl, br = zone
+        x_tl, y_tl = tl
+        x_br, y_br = br
+
+        if (x_point >= x_tl and x_point <= x_br) and (
+            y_point >= y_tl and y_point <= y_br
+        ):
+            return True
+        else:
+            return False
+
+    def draw_zone(self, img, center, factor=3):
+        h, w, ch = img.shape
+        tl = ((0, 0), (w // factor, h // factor))
+        tc = ((w // factor, 0), (w - (w // factor), h // factor))
+        tr = ((w - (w // factor), 0), (w, h // factor))
+
+        ml = ((0, h // factor), (w // factor, h - (h // factor)))
+        mc = ((w // factor, h // factor), (w - (w // factor), h - (h // factor)))
+        mr = ((w - (w // factor), h // factor), (w, h - (h // factor)))
+
+        bl = ((0, h - (h // factor)), (w // factor, h))
+        bc = ((w // factor, h - (h // factor)), (w - (w // factor), h))
+        br = ((w - (w // factor), h - (h // factor)), (w, h))
+
+        zone_lst = [tl, tc, tr, ml, mc, mr, bl, bc, br]
+        zone_res = None
+        for i, z in enumerate(zone_lst):
+            if self.in_zone(center, z):
+                _z = zone_lst.pop(i)
+                zone_lst.append(_z)
+                zone_res = _z
+                break
+
+        for z in zone_lst:
+            cv2.rectangle(
+                img,
+                (int(z[0][0]), int(z[0][1])),
+                (int(z[1][0]), int(z[1][1])),
+                (0, 255, 0) if self.in_zone(center, z) else (255, 255, 255),
+                2,
+            )
+        return img, [n for n, v in locals().items() if v == zone_res][0]
+
     def draw(self, img):
-        cens = []
+        biggest_area = -1
+        biggest_obj = None
         for _id, obj in self.obj_ids.items():
             lost = obj["lost"]
             if lost > 0:
                 continue
 
             obj_dct = obj["obj"]
+            tl = obj_dct["topLeft"]
+            br = obj_dct["bottomRight"]
+
+            if self.area_cal(tl, br) > biggest_area:
+                biggest_area = self.area_cal(tl, br)
+                biggest_obj = obj
+
+        if biggest_obj is None:
+            cen = None
+            img = self.draw_zone(img, cen, factor=2.85)
+            return img, []
+        else:
+            obj_dct = biggest_obj["obj"]
             tl = obj_dct["topLeft"]
             br = obj_dct["bottomRight"]
             cen = obj_dct["center"]
@@ -173,13 +252,17 @@ class VideoHandle:
             label = f"{name} {conf:.2f}"
             id_label = f"id: {_id}"
 
-            cv2.rectangle(img, tl, br, colors(clss, True), 3)
+            colors = [(157, 159, 21), (62, 139, 2), (67, 74, 250)]
+
+            img, z_name = self.draw_zone(img, cen, factor=2.85)
+
+            cv2.rectangle(img, tl, br, colors[clss], 3)
             w, h = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.75, 2)[0]
             cv2.rectangle(
                 img,
                 (tl[0] - 2, tl[1] - h - 10 - 10),
                 (tl[0] + w + 2, tl[1]),
-                colors(clss, True),
+                colors[clss],
                 -1,
             )
             cv2.putText(
@@ -196,7 +279,7 @@ class VideoHandle:
                 img,
                 (br[0] - w - 10 - 10, br[1] - h - 10 - 10),
                 (br[0], br[1]),
-                colors(clss, True),
+                colors[clss],
                 -1,
             )
             cv2.putText(
@@ -208,11 +291,9 @@ class VideoHandle:
                 (255, 255, 255),
                 2,
             )
-            cv2.circle(img, cen, 3, colors(clss, True), -1)
+            cv2.circle(img, cen, 3, colors[clss], -1)
 
-            cens.append((cen, name, self.area_cal(tl, br)))
-
-        return img, cens
+            return img, (name, cen, self.area_cal(tl, br), z_name)
 
     def write_vid(
         self, avg_fps: float, file_name: str = "out.mp4", fourcc: str = "mp4v"

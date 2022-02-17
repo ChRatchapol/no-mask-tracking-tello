@@ -219,7 +219,7 @@ class VideoHandle:
                 (0, 255, 0) if self.in_zone(center, z) else (255, 255, 255),
                 2,
             )
-        return img, [n for n, v in locals().items() if v == zone_res][0]
+        return img, [n for n, v in locals().items() if v is zone_res][0]
 
     def draw(self, img):
         biggest_area = -1
@@ -239,8 +239,8 @@ class VideoHandle:
 
         if biggest_obj is None:
             cen = None
-            img = self.draw_zone(img, cen, factor=2.85)
-            return img, []
+            img, z_name = self.draw_zone(img, cen, factor=2.85)
+            return img, None
         else:
             obj_dct = biggest_obj["obj"]
             tl = obj_dct["topLeft"]
@@ -249,7 +249,7 @@ class VideoHandle:
             conf = obj_dct["confidenceScore"]
             name = obj_dct["className"]
             clss = obj_dct["classNumber"]
-            label = f"{name} {conf:.2f}"
+            label = f"{name} {conf:.2f} {self.area_cal(tl, br)}"
             id_label = f"id: {_id}"
 
             colors = [(157, 159, 21), (62, 139, 2), (67, 74, 250)]
@@ -292,7 +292,6 @@ class VideoHandle:
                 2,
             )
             cv2.circle(img, cen, 3, colors[clss], -1)
-
             return img, (name, cen, self.area_cal(tl, br), z_name)
 
     def write_vid(

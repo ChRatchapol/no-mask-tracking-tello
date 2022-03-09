@@ -84,27 +84,32 @@ test = False
 if __name__ == "__main__":
     if "-t" in sys.argv[1:] or "--test" in sys.argv[1:]:
         test = True
-    cmd = Command(fmt=FORMAT, tello_ip=TELLO_IP, cmd_port=CMD_PORT, self_ip=IP)
-    cmd.init()
+    if not test:
+        cmd = Command(fmt=FORMAT, tello_ip=TELLO_IP, cmd_port=CMD_PORT, self_ip=IP)
+        cmd.init()
     vh = VideoHandle(img_port=IMG_PORT, req_fps=FPS, test=test)
     vh.start_thrd()
-    sent = cmd.send(msg="battery?")
-    sent = cmd.send(msg="takeoff")
-    time.sleep(3)
-    while vh.run:
-        try:
-            response = cmd.rcv_queue.get_nowait()
-        except Empty:
-            pass
-        else:
-            print(">>> " + response)
-
-        if vh.cur_cen is not None:
-            cls_name, center, area, zone = vh.cur_cen
-            if cls_name != "with_mask":
-                move_by_zone(zone, area)
+    if not test:
+        sent = cmd.send(msg="battery?")
+        sent = cmd.send(msg="takeoff")
+        time.sleep(3)
+        while vh.run:
+            try:
+                response = cmd.rcv_queue.get_nowait()
+            except Empty:
+                pass
             else:
-                sent = cmd.send(msg="battery?")
-        time.sleep(0.5)
-    sent = cmd.send(msg="land")
-    cmd.rcv_term()
+                print(">>> " + response)
+
+            if vh.cur_cen is not None:
+                cls_name, center, area, zone = vh.cur_cen
+                if cls_name != "with_mask":
+                    move_by_zone(zone, area)
+                else:
+                    sent = cmd.send(msg="battery?")
+            time.sleep(0.5)
+        sent = cmd.send(msg="land")
+        cmd.rcv_term()
+    else:
+        while vh.run:
+            time.sleep(0.5+0.15)
